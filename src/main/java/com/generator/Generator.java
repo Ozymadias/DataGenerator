@@ -1,9 +1,6 @@
 package com.generator;
 
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import com.squareup.okhttp.*;
 import org.fluttercode.datafactory.impl.DataFactory;
 
 import java.io.IOException;
@@ -16,15 +13,16 @@ import java.util.stream.IntStream;
 
 public class Generator {
     private static List<String> list = new ArrayList<>();
-    private static final int NUMBER_OF_USERS = 100;
+    private static final int NUMBER_OF_USERS = 100  ;
     private static final int PERCENT_OF_FRIENDS = 10;
-    private static final int PERCENT_OF_INVITATIONS = 10;
+    private static final int PERCENT_OF_INVITATIONS = 3;
 
     private static Random generator = new Random();
-    private static HttpClient client = HttpClients.createDefault();
+    private static OkHttpClient client = new OkHttpClient();
 
     public static void main(String[] args) throws IOException {
         DataFactory dataFactory = new DataFactory();
+        long start = System.currentTimeMillis();
         for (int i = 0; i < NUMBER_OF_USERS; i++) {
             String name = dataFactory.getFirstName() + "_" + dataFactory.getLastName();
             String city = dataFactory.getCity().replace(" ", "_");
@@ -33,19 +31,25 @@ public class Generator {
 
             System.out.println(name + "-" + city + "-" + dateFormat.format(date));
 
-            String headers = "?name=" + name + "&city=" + city + "&birthDate=" + dateFormat.format(date);
-            HttpPost register = new HttpPost("http://localhost:8085/register" + headers);
-            String mongoId = client.execute(register).getFirstHeader("mongoId").getElements()[0].toString();
+            Request request = new Request.Builder()
+                    .header("name", name).header("city", city).header("birthDate", dateFormat.format(date))
+                    .url("http://localhost:8085/register")
+                    .post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), ""))
+                    .build();
+            Response response = client.newCall(request).execute();
+            String mongoId = response.header("mongoId");
+            System.out.println(mongoId);
             list.add(mongoId);
-//            System.out.println(mongoId);
         }
 
         IntStream.range(0, list.size()).forEach(Generator::generateRelations);
+        long stop = System.currentTimeMillis();
+        System.out.println(stop - start);
     }
 
     private static void generateRelations(int index) {
         generateFriends(index);
-//            generateInvitations(index);
+        generateInvitations(index);
     }
 
     private static void generateInvitations(int index) {
@@ -59,11 +63,11 @@ public class Generator {
     }
 
     private static void generateInvitation(int index) throws IOException {
-        client.execute(createInvitationPost(index, generator.nextInt(NUMBER_OF_USERS)));
+        createInvitationPost(index, generator.nextInt(NUMBER_OF_USERS));
     }
 
     private static void generateFriends(int index) {
-        System.out.println(NUMBER_OF_USERS * PERCENT_OF_FRIENDS / 100);
+        System.out.println("index: " + index);
         IntStream.range(0, NUMBER_OF_USERS * PERCENT_OF_FRIENDS / 100).forEach(e ->
         {
             try {
@@ -77,13 +81,16 @@ public class Generator {
 
     private static void generateFriend(int index) throws IOException {
         int friendIndex = generator.nextInt(NUMBER_OF_USERS);
-        client.execute(createInvitationPost(index, friendIndex));
-        client.execute(createInvitationPost(friendIndex, index));
+        createInvitationPost(index, friendIndex);
+        createInvitationPost(friendIndex, index);
     }
 
-    private static HttpPost createInvitationPost(int inviterIndex, int inviteeIndex) {
-        HttpPost httpPost = new HttpPost("http://localhost:8085/" + list.get(inviteeIndex) + "/invite?inviteeId=" + list.get(inviterIndex));
-        System.out.println(httpPost);
-        return httpPost;
+    private static void createInvitationPost(int inviterIndex, int inviteeIndex) throws IOException {
+        Request request = new Request.Builder()
+                .header("inviteeId", list.get(inviterIndex))
+                .url("http://localhost:8085/" + list.get(inviteeIndex) + "/invite")
+                .post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), ""))
+                .build();
+        client.newCall(request).execute();
     }
 }
